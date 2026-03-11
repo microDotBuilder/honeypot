@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import { encrypt } from "../common/crypto.js";
 import { Honeypot, SpamError } from "./honeypot.js";
@@ -8,6 +9,14 @@ function invariant(condition: any, message: string): asserts condition {
 }
 
 const ENCRYPTION_SEED = "TEST_HONEYPOT_SECRET";
+
+function signTokenPayload(payload: string): string {
+  const signature = createHmac("sha256", ENCRYPTION_SEED)
+    .update(payload)
+    .digest("base64url");
+
+  return `${payload}.${signature}`;
+}
 
 describe(Honeypot, () => {
   test("generates input props", async () => {
@@ -84,8 +93,20 @@ describe(Honeypot, () => {
     ).resolves.toBeUndefined();
   });
 
+  test("does not block unrelated forms when no honeypot fields are submitted", async () => {
+    const formData = new FormData();
+    formData.set("email", "dev@example.com");
+    formData.set("message", "Hello");
+
+    await expect(
+      new Honeypot({
+        encryptionSeed: ENCRYPTION_SEED,
+      }).check(formData),
+    ).resolves.toBeUndefined();
+  });
+
   test(
-    "checks validity of FormData with encrypted timestamp and randomized " +
+    "checks validity of FormData with a signed validation token and randomized " +
       "field name",
     async () => {
       const honeypot = new Honeypot({
@@ -103,6 +124,27 @@ describe(Honeypot, () => {
       await expect(honeypot.check(formData)).resolves.toBeUndefined();
     },
   );
+
+  test("accepts legacy timestamp tokens for randomized field names", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+      randomizeNameFieldName: true,
+    });
+
+    const props = await honeypot.getInputProps({
+      validFromTimestamp: 1_700_000_000_000,
+    });
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.set(
+      props.validFromFieldName,
+      await encrypt("1700000000000", ENCRYPTION_SEED),
+    );
+
+    await expect(honeypot.check(formData)).resolves.toBeUndefined();
+  });
 
   test("fails validity check if input is not present", async () => {
     const honeypot = new Honeypot({
@@ -165,6 +207,40 @@ describe(Honeypot, () => {
     );
   });
 
+  test("fails if the valid from token is missing the payload", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+    });
+
+    const props = await honeypot.getInputProps();
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.set(props.validFromFieldName, ".signature");
+
+    await expect(honeypot.check(formData)).rejects.toThrowError(
+      new SpamError("Invalid honeypot valid from input"),
+    );
+  });
+
+  test("fails if the valid from token is missing the signature", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+    });
+
+    const props = await honeypot.getInputProps();
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.set(props.validFromFieldName, "payload.");
+
+    await expect(honeypot.check(formData)).rejects.toThrowError(
+      new SpamError("Invalid honeypot valid from input"),
+    );
+  });
+
   test("fails if the timestamp is not valid", async () => {
     const honeypot = new Honeypot({
       encryptionSeed: ENCRYPTION_SEED,
@@ -179,6 +255,23 @@ describe(Honeypot, () => {
       props.validFromFieldName,
       await encrypt("invalid", ENCRYPTION_SEED),
     );
+
+    await expect(honeypot.check(formData)).rejects.toThrowError(
+      new SpamError("Invalid honeypot valid from input"),
+    );
+  });
+
+  test("fails if the valid from payload is malformed base64url", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+    });
+
+    const props = await honeypot.getInputProps();
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.set(props.validFromFieldName, signTokenPayload("***"));
 
     await expect(honeypot.check(formData)).rejects.toThrowError(
       new SpamError("Invalid honeypot valid from input"),
@@ -202,6 +295,45 @@ describe(Honeypot, () => {
 
     await expect(honeypot.check(formData)).rejects.toThrowError(
       new SpamError("Missing honeypot valid from input"),
+    );
+  });
+
+  test("fails if valid from input is duplicated", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+    });
+
+    const props = await honeypot.getInputProps();
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.append(props.validFromFieldName, props.encryptedValidFrom);
+    formData.append(
+      props.validFromFieldName,
+      await encrypt(Date.now().toString(), ENCRYPTION_SEED),
+    );
+
+    await expect(honeypot.check(formData)).rejects.toThrowError(
+      new SpamError("Invalid honeypot valid from input"),
+    );
+  });
+
+  test("fails if valid from input has multiple values and one is a file", async () => {
+    const honeypot = new Honeypot({
+      encryptionSeed: ENCRYPTION_SEED,
+    });
+
+    const props = await honeypot.getInputProps();
+    invariant(props.validFromFieldName, "validFromFieldName is null");
+
+    const formData = new FormData();
+    formData.set(props.nameFieldName, "");
+    formData.append(props.validFromFieldName, props.encryptedValidFrom);
+    formData.append(props.validFromFieldName, new File(["bot"], "bot.txt"));
+
+    await expect(honeypot.check(formData)).rejects.toThrowError(
+      new SpamError("Invalid honeypot valid from input"),
     );
   });
 
@@ -325,4 +457,69 @@ describe(Honeypot, () => {
 
     await expect(honeypot.check(formData)).resolves.toBeUndefined();
   });
+
+  test(
+    "rejects valid from tokens with extra separators",
+    async () => {
+      const honeypot = new Honeypot({
+        encryptionSeed: ENCRYPTION_SEED,
+      });
+
+      const props = await honeypot.getInputProps();
+      invariant(props.validFromFieldName, "validFromFieldName is null");
+
+      const formData = new FormData();
+      formData.set(props.nameFieldName, "");
+      formData.set(
+        props.validFromFieldName,
+        `${props.encryptedValidFrom}.extra`,
+      );
+
+      await expect(honeypot.check(formData)).rejects.toThrowError(
+        new SpamError("Invalid honeypot valid from input"),
+      );
+    },
+  );
+
+  test(
+    "rejects spoofed randomized field prefixes",
+    async () => {
+      const honeypot = new Honeypot({
+        encryptionSeed: ENCRYPTION_SEED,
+        randomizeNameFieldName: true,
+      });
+
+      const props = await honeypot.getInputProps();
+      invariant(props.validFromFieldName, "validFromFieldName is null");
+
+      const formData = new FormData();
+      formData.set("name__confirm_spoofed", "");
+      formData.set(props.validFromFieldName, props.encryptedValidFrom);
+
+      await expect(honeypot.check(formData)).rejects.toThrowError(
+        new SpamError("Missing honeypot input"),
+      );
+    },
+  );
+
+  test(
+    "rejects duplicate honeypot values when any value is filled",
+    async () => {
+      const honeypot = new Honeypot({
+        encryptionSeed: ENCRYPTION_SEED,
+      });
+
+      const props = await honeypot.getInputProps();
+      invariant(props.validFromFieldName, "validFromFieldName is null");
+
+      const formData = new FormData();
+      formData.append(props.nameFieldName, "");
+      formData.append(props.nameFieldName, "bot-value");
+      formData.set(props.validFromFieldName, props.encryptedValidFrom);
+
+      await expect(honeypot.check(formData)).rejects.toThrowError(
+        new SpamError("Honeypot input not empty"),
+      );
+    },
+  );
 });

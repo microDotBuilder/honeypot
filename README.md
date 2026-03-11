@@ -50,11 +50,13 @@ const formData = await request.formData();
 await honeypot.check(formData);
 ```
 
-`honeypot.check(formData)` throws `SpamError` when the trap field is filled, the honeypot field is missing after the signed timestamp is submitted, or the signed timestamp is invalid.
+`honeypot.check(formData)` throws `SpamError` when the trap field is filled, the honeypot field is missing after the signed validation token is submitted, or the signed validation token is invalid.
 
 ## React Usage
 
 Create honeypot props on the server and pass them into `HoneypotProvider`. Render `HoneypotInputs` inside the same `<form>` so both hidden inputs are included in the browser `FormData`.
+
+`encryptedValidFrom` should be treated as an opaque signed validation token. When `randomizeNameFieldName` is enabled and `validFromFieldName` is present, the token also binds the exact generated honeypot field name to the submission. If `validFromFieldName` is `null`, the package preserves the legacy behavior and cannot verify the exact randomized field name on the server.
 
 ```tsx
 import type { Honeypot } from "tanstack-utils/server";
@@ -135,7 +137,7 @@ Out of scope for this package:
 - JS-only mutation submissions that do not send the native form `FormData`
 - TanStack-specific hooks or adapters
 
-If you bypass native form submission and build the request body yourself, you must manually include the honeypot field and signed `validFrom` value in that payload.
+If you bypass native form submission and build the request body yourself, you must manually include the honeypot field and signed `validFrom` token in that payload.
 
 ## Development
 
