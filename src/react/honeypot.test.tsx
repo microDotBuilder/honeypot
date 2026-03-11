@@ -68,4 +68,33 @@ describe(HoneypotInputs, () => {
     expect(html).toContain('nonce="nonce-123"');
     expect(html).toContain(".custom-honeypot { display: none; }");
   });
+
+  test("escapes hostile props without breaking markup", () => {
+    const html = renderToStaticMarkup(
+      <HoneypotProvider
+        encryptedValidFrom={'signed"value'}
+        nameFieldName={'trap" data-evil="1'}
+        validFromFieldName={'valid" onclick="alert(1)'}
+      >
+        <HoneypotInputs
+          className={'trap"></style><script>alert(1)</script>'}
+          label={'Leave blank</label><script>alert(1)</script>'}
+          nonce="nonce-123"
+        />
+      </HoneypotProvider>,
+    );
+    const htmlWithoutStyleBlocks = html.replace(
+      /<style[\s\S]*?<\/style>/g,
+      "",
+    );
+
+    expect(html.match(/<style/g)?.length).toBe(1);
+    expect(html).not.toContain("</style><script>");
+    expect(htmlWithoutStyleBlocks).not.toContain("<script");
+    expect(html).not.toContain('data-evil="1"');
+    expect(html).not.toContain('onclick="alert(1)"');
+    expect(html).toContain("&lt;/label&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain('value="signed&quot;value"');
+    expect(html).toContain("readOnly");
+  });
 });

@@ -17,7 +17,13 @@ export async function decrypt(
   token: string,
   secret: string,
 ): Promise<string | null> {
-  const [payload, signature] = token.split(".");
+  const separatorIndex = token.indexOf(".");
+
+  if (separatorIndex === -1) return null;
+  if (separatorIndex !== token.lastIndexOf(".")) return null;
+
+  const payload = token.slice(0, separatorIndex);
+  const signature = token.slice(separatorIndex + 1);
 
   if (!payload || !signature) return null;
 
