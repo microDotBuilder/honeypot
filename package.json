@@ -1,0 +1,62 @@
+{
+  "name": "tanstack-utils",
+  "version": "0.1.0",
+  "description": "Framework-agnostic honeypot protection with a React adapter for native form submissions.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microDotBuilder/honeypot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/microDotBuilder/honeypot/issues"
+  },
+  "homepage": "https://github.com/microDotBuilder/honeypot#readme",
+  "keywords": [
+    "honeypot",
+    "spam-protection",
+    "forms",
+    "react",
+    "tanstack-form"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/honeypot.d.ts",
+      "default": "./dist/honeypot.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "main": "./dist/honeypot.js",
+  "types": "./dist/honeypot.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./honeypot.ts ./server.ts ./react.ts --outdir ./dist --target bun --external react --external react/jsx-runtime",
+    "build:types": "bunx tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.4",
+    "@types/react-dom": "^19.2.3",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "sideEffects": false
+}
